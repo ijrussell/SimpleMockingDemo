@@ -1,5 +1,5 @@
 ﻿using System;
-using NSubstitute;
+using System.Collections.Generic;
 using NUnit.Framework;
 
 namespace MockingDemo.Tests
@@ -7,147 +7,81 @@ namespace MockingDemo.Tests
     [TestFixture]
     public class UserServiceTests
     {
+        public const string goodEmailAddress = "Laptop@asos.com";
+
         [Test]
-        public void get_returns_an_existing_user()
+        public void Given_An_Email_Address__When_Getting_A_User__Then_Return_The_User_Info()
         {
-            var id = Guid.NewGuid();
-            var name = "Test";
-
-            var stub = new UserReturnedUserDataService(id, name);
-
+            var createdUser = new User(Guid.NewGuid(), "Laptop", goodEmailAddress);
+            var stub = new UserDataService(createdUser);
             var sut = new UserService(stub);
+            var user = sut.Get(createdUser.Email);
 
-            var email = "test@test.com";
-
-            var result = sut.Get(email);
-
-            Assert.That(result.Email, Is.EqualTo(email));
-            Assert.That(result.Id, Is.EqualTo(id));
-            Assert.That(result.Name, Is.EqualTo(name));
+            Assert.That(user.Id, Is.EqualTo(createdUser.Id));
+            Assert.That(user.Name, Is.EqualTo(createdUser.Name));
+            Assert.That(user.Email, Is.EqualTo(createdUser.Email));
         }
 
         [Test]
-        public void get_returns_an_non_existing_user()
+        public void Given_An_Email_Address__When_Getting_A_User_That_Dont_Exist__Then_Does_Not_Return_User()
         {
-            var stub = new NoUserReturnedUserDataService();
-
+            var emailAddress = "NotFound@asos.com";
+            var stub = new UserDataService(new User(Guid.NewGuid(), "NotFound", emailAddress));
             var sut = new UserService(stub);
-
-            var email = "test@test.com";
-
-            var result = sut.Get(email);
-
-            Assert.That(result, Is.Null);
+            var user = sut.Get(emailAddress);
+            Assert.That(user, Is.Null);
         }
 
         [Test]
-        public void user_who_doesnt_exist_is_created()
+        public void Given_An_Email_Address__When_Deleting_User__Then_User_Is_Deleted()
         {
-            var stub = new NoUserReturnedAndCreateUserUserDataService();
+            var mock = new DeleteUserDataService();
+            var sut = new UserService(mock);
+            sut.Delete("Laptop@asos.com");
+            Assert.That(mock.IsDeleted, Is.True);
+        }
 
+        [Test]
+        public void Given_An_Existing_User__When_Creating_User_With_Same_Email__Then_Throws_An_Exception()
+        {
+            var stub = new CreateUserDataService(new User(Guid.NewGuid(), "Laptop", goodEmailAddress));
             var sut = new UserService(stub);
+            Assert.Throws<Exception>(() => sut.Create("Laptop", goodEmailAddress));
+        }
 
+        [Test]
+        public void Given_A_New_User__When_Creating_A_User_With_An_Email_Address__Then_Return_That_User_Info()
+        {
             var id = Guid.NewGuid();
+            var stub = new CreateUserDataService(new User(id, "Team", "Team@asos.com"));
 
             GuidProvider.Current = new FakeGuidProvider(id);
+            var sut = new UserService(stub);
+            var userInfo = sut.Create("Team", "Team@asos.com");
 
-            var name = "test";
-            var email = "test@test.com";
-
-            var result = sut.Create(name, email);
-
-            Assert.That(result.Name, Is.EqualTo(name));
-            Assert.That(result.Email, Is.EqualTo(email));
-            Assert.That(result.Id, Is.EqualTo(id));
+            Assert.That(userInfo.Id, Is.EqualTo(id));
+            Assert.That(userInfo.Name, Is.EqualTo("Team"));
+            Assert.That(userInfo.Email, Is.EqualTo("Team@asos.com"));
 
             GuidProvider.ResetToDefault();
         }
 
-        [Test]
-        public void user_who_does_exist_is_not_created()
+        public class CreateUserDataService : IUserDataService
         {
-            var name = "Test";
-            var email = "test@test.com";
-            
-            var stub = Substitute.For<IUserDataService>();
+            private User user;
 
-            stub.GetByEmail(email).Returns(new User(Guid.NewGuid(), name, email));
-
-            var sut = new UserService(stub);
-
-            Assert.Throws<Exception>(() => sut.Create(name, email));
-        }
-
-        [Test]
-        public void user_is_deleted()
-        {
-            var mock = Substitute.For<IUserDataService>();
-            
-            var email = "test@test.com";
-
-            var sut = new UserService(mock);
-
-            sut.Delete(email);
-
-            mock.Received().Delete(email);
-        }
-
-        public class UserReturnedUserDataService : IUserDataService
-        {
-            private readonly Guid _id;
-            private readonly string _name;
-
-            public UserReturnedUserDataService()
+            public CreateUserDataService(User user)
             {
-
-            }
-
-            public UserReturnedUserDataService(Guid id, string name)
-            {
-                _id = id;
-                _name = name;
+                this.user = user;
             }
 
             public User GetByEmail(string email)
             {
-                return new User(_id, _name, email);
-            }
+                if (email == goodEmailAddress)
+                {
+                    return new User(this.user.Id, this.user.Name, email);
+                }
 
-            public User Create(Guid id, string name, string email)
-            {
-                throw new NotImplementedException();
-            }
-
-            public void Delete(string email)
-            {
-                throw new NotImplementedException();
-            }
-        }
-
-        public class NoUserReturnedUserDataService : IUserDataService
-        {
-            public User GetByEmail(string email)
-            {
-                return null;
-            }
-
-            public User Create(Guid id, string name, string email)
-            {
-                throw new NotImplementedException();
-            }
-
-            public void Delete(string email)
-            {
-                throw new NotImplementedException();
-            }
-        }
-
-        public class NoUserReturnedAndCreateUserUserDataService : IUserDataService
-        {
-            public Guid Id { get; set; }
-
-            public User GetByEmail(string email)
-            {
                 return null;
             }
 
@@ -162,25 +96,55 @@ namespace MockingDemo.Tests
             }
         }
 
-        public class UserDeletedUserUserDataService : IUserDataService
+
+        public class DeleteUserDataService : IUserDataService
         {
-            public bool DeleteWasCalled { get; set; }
-            public string Email { get; set; }
+            public bool IsDeleted { get; private set; }
 
             public User GetByEmail(string email)
             {
+                throw new NotImplementedException();
+            }
+
+            public User Create(Guid id, string name, string email)
+            {
+                throw new NotImplementedException();
+            }
+
+            public void Delete(string email)
+            {
+                this.IsDeleted = true;
+            }
+        }
+
+
+        public class UserDataService : IUserDataService
+        {
+            private User user;
+
+            public UserDataService(User user)
+            {
+                this.user = user;
+            }
+
+            public User GetByEmail(string email)
+            {
+                if (email == goodEmailAddress)
+                {
+                    return new User(this.user.Id, this.user.Name, email);
+                }
+
                 return null;
             }
 
             public User Create(Guid id, string name, string email)
             {
-                return new User(id, name, email);
+                throw new NotImplementedException();
             }
 
             public void Delete(string email)
             {
-                Email = email;
-                DeleteWasCalled = true;
+                throw new NotImplementedException();
             }
         }
     }

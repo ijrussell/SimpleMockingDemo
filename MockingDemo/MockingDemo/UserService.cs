@@ -8,7 +8,7 @@ namespace MockingDemo
 
         public UserService(IUserDataService userDataService)
         {
-            _userDataService = userDataService;
+            _userDataService = userDataService ?? throw new ArgumentNullException(nameof(userDataService));
         }
 
         public UserInfo Get(string email)
@@ -23,7 +23,7 @@ namespace MockingDemo
             var user = _userDataService.GetByEmail(email);
 
             if (user != null)
-                throw new Exception(string.Format("{0} already exists", email));
+                throw new Exception($"{email} already exists");
 
             user = _userDataService.Create(GuidProvider.Current.Id, name, email);
 
