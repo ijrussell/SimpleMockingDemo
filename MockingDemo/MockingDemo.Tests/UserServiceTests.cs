@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
 
 namespace MockingDemo.Tests
@@ -9,142 +10,147 @@ namespace MockingDemo.Tests
     {
         public const string goodEmailAddress = "Laptop@asos.com";
 
+        [TearDown]
+        public void Teardown()
+        {
+            GuidProvider.ResetToDefault();
+        }
+
         [Test]
         public void Given_An_Email_Address__When_Getting_A_User__Then_Return_The_User_Info()
         {
-            var createdUser = new User(Guid.NewGuid(), "Laptop", goodEmailAddress);
-            var stub = new UserDataService(createdUser);
-            var sut = new UserService(stub);
-            var user = sut.Get(createdUser.Email);
+            var existingUser = new UserBuilder().WithEmail(goodEmailAddress).Build();
+            var fakeUserDataService = new FakeUserDataService(BuildUserList(existingUser));
+            var sut = new UserService(fakeUserDataService);
+            var user = sut.Get(existingUser.Email);
 
-            Assert.That(user.Id, Is.EqualTo(createdUser.Id));
-            Assert.That(user.Name, Is.EqualTo(createdUser.Name));
-            Assert.That(user.Email, Is.EqualTo(createdUser.Email));
+            Assert.That(user, Is.EqualTo(new UserInfo(existingUser)));
         }
 
         [Test]
         public void Given_An_Email_Address__When_Getting_A_User_That_Dont_Exist__Then_Does_Not_Return_User()
         {
-            var emailAddress = "NotFound@asos.com";
-            var stub = new UserDataService(new User(Guid.NewGuid(), "NotFound", emailAddress));
-            var sut = new UserService(stub);
-            var user = sut.Get(emailAddress);
+            var nonExistentUser = new UserBuilder().WithEmail("notfound@asos.com").Build();
+            var existingUser = new UserBuilder().WithEmail(goodEmailAddress).Build();
+            var fakeUserDataService = new FakeUserDataService(BuildUserList(existingUser));
+            var sut = new UserService(fakeUserDataService);
+
+            var user = sut.Get(nonExistentUser.Email);
+
             Assert.That(user, Is.Null);
         }
 
         [Test]
         public void Given_An_Email_Address__When_Deleting_User__Then_User_Is_Deleted()
         {
-            var mock = new DeleteUserDataService();
-            var sut = new UserService(mock);
-            sut.Delete("Laptop@asos.com");
-            Assert.That(mock.IsDeleted, Is.True);
+            var existingUser = new UserBuilder().WithEmail(goodEmailAddress).Build();
+            var fakeUserDataService = new FakeUserDataService(BuildUserList(existingUser));
+            var sut = new UserService(fakeUserDataService);
+
+            sut.Delete(goodEmailAddress);
+
+            Assert.That(fakeUserDataService.GetByEmail(existingUser.Email), Is.Null);
         }
 
         [Test]
         public void Given_An_Existing_User__When_Creating_User_With_Same_Email__Then_Throws_An_Exception()
         {
-            var stub = new CreateUserDataService(new User(Guid.NewGuid(), "Laptop", goodEmailAddress));
-            var sut = new UserService(stub);
-            Assert.Throws<Exception>(() => sut.Create("Laptop", goodEmailAddress));
+            var existingUser = new UserBuilder().WithEmail(goodEmailAddress).Build();
+            var fakeUserDataService = new FakeUserDataService(BuildUserList(existingUser));
+            var sut = new UserService(fakeUserDataService);
+
+            Assert.Throws<Exception>(() => sut.Create(existingUser.Name, existingUser.Email));
         }
 
         [Test]
         public void Given_A_New_User__When_Creating_A_User_With_An_Email_Address__Then_Return_That_User_Info()
         {
             var id = Guid.NewGuid();
-            var stub = new CreateUserDataService(new User(id, "Team", "Team@asos.com"));
+            var expectedUser = new UserBuilder().WithId(id).WithEmail(goodEmailAddress).Build();
+            var fakeUserDataService = new FakeUserDataService(new List<User>());
 
             GuidProvider.Current = new FakeGuidProvider(id);
-            var sut = new UserService(stub);
-            var userInfo = sut.Create("Team", "Team@asos.com");
+            var sut = new UserService(fakeUserDataService);
 
-            Assert.That(userInfo.Id, Is.EqualTo(id));
-            Assert.That(userInfo.Name, Is.EqualTo("Team"));
-            Assert.That(userInfo.Email, Is.EqualTo("Team@asos.com"));
+            var createdUser = sut.Create(expectedUser.Name, expectedUser.Email);
 
-            GuidProvider.ResetToDefault();
+            Assert.That(createdUser, Is.EqualTo(new UserInfo(expectedUser)));
         }
 
-        public class CreateUserDataService : IUserDataService
+        private List<User> BuildUserList(User user)
         {
-            private User user;
-
-            public CreateUserDataService(User user)
+            return new List<User>
             {
-                this.user = user;
+                user
+            };
+        }
+
+        public class FakeUserDataService : IUserDataService
+        {
+            private readonly List<User> users;
+
+            public FakeUserDataService(List<User> users)
+            {
+                this.users = users;
             }
 
             public User GetByEmail(string email)
             {
-                if (email == goodEmailAddress)
+                return users.SingleOrDefault(x => x.Email == email);
+            }
+
+            public User Create(Guid id, string name, string email)
+            {
+                this.users.Add(new User(id, name, email));
+
+                return GetByEmail(email);
+            }
+
+            public void Delete(string email)
+            {
+                var user = GetByEmail(email);
+
+                if (user != null)
                 {
-                    return new User(this.user.Id, this.user.Name, email);
+                    this.users.Remove(user);
                 }
-
-                return null;
-            }
-
-            public User Create(Guid id, string name, string email)
-            {
-                return new User(id, name, email);
-            }
-
-            public void Delete(string email)
-            {
-                throw new NotImplementedException();
             }
         }
 
-
-        public class DeleteUserDataService : IUserDataService
+        public class UserBuilder
         {
-            public bool IsDeleted { get; private set; }
+            private Guid id;
+            private string name;
+            private string email;
 
-            public User GetByEmail(string email)
+            public UserBuilder()
             {
-                throw new NotImplementedException();
+                this.id = Guid.NewGuid();
+                this.name = "Default name";
+                this.email = "default@asos.com";
             }
 
-            public User Create(Guid id, string name, string email)
+            public UserBuilder WithId(Guid id)
             {
-                throw new NotImplementedException();
+                this.id = id;
+                return this;
             }
 
-            public void Delete(string email)
+            public UserBuilder WithName(string name)
             {
-                this.IsDeleted = true;
-            }
-        }
-
-
-        public class UserDataService : IUserDataService
-        {
-            private User user;
-
-            public UserDataService(User user)
-            {
-                this.user = user;
+                this.name = name;
+                return this;
             }
 
-            public User GetByEmail(string email)
+            public UserBuilder WithEmail(string email)
             {
-                if (email == goodEmailAddress)
-                {
-                    return new User(this.user.Id, this.user.Name, email);
-                }
-
-                return null;
+                this.email = email;
+                return this;
             }
 
-            public User Create(Guid id, string name, string email)
+            public User Build()
             {
-                throw new NotImplementedException();
-            }
-
-            public void Delete(string email)
-            {
-                throw new NotImplementedException();
+                return new User(this.id, this.name, this.email);
             }
         }
     }

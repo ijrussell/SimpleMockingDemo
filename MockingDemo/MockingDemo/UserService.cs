@@ -15,7 +15,7 @@ namespace MockingDemo
         {
             var user = _userDataService.GetByEmail(email);
 
-            return MapFrom(user);
+            return user != null ? new UserInfo(user) : null;
         }
 
         public UserInfo Create(string name, string email)
@@ -27,25 +27,12 @@ namespace MockingDemo
 
             user = _userDataService.Create(GuidProvider.Current.Id, name, email);
 
-            return MapFrom(user);
+            return new UserInfo(user);
         }
 
         public void Delete(string email)
         {
             _userDataService.Delete(email);
-        }
-
-        private UserInfo MapFrom(User user)
-        {
-            if (user == null)
-                return null;
-            
-            return new UserInfo
-            {
-                Id = user.Id,
-                Email = user.Email,
-                Name = user.Name
-            };
         }
     }
 }
